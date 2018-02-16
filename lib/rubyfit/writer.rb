@@ -4,7 +4,8 @@ class RubyFit::Writer
   def write(stream, opts = {})
     raise "Can't start write mode from #{@state}" if @state
     @state = :write
-    @local_nums = []
+    @local_nums = {}
+    @last_local_num = -1
 
     @stream = stream
 
@@ -36,8 +37,7 @@ class RubyFit::Writer
     data_size = definition_sizes + data_sizes
     write_data(RubyFit::MessageWriter.file_header(data_size))
 
-    write_definition_message(:file_id)
-    write_data_message(:file_id, {
+    write_message(:file_id, {
       time_created: opts[:time_created],
       type: 6, # Course file
       manufacturer: 1, # Garmin
@@ -45,11 +45,9 @@ class RubyFit::Writer
       serial_number: 0,
     })
 
-    write_definition_message(:course)
-    write_data_message(:course, { name: opts[:name] })
+    write_message(:course, { name: opts[:name] })
 
-    write_definition_message(:lap)
-    write_data_message(:lap, {
+    write_message(:lap, {
       start_time: start_time,
       timestamp: end_time,
       start_x: opts[:start_x],
@@ -68,7 +66,6 @@ class RubyFit::Writer
   def course_points
     raise "Can only start course points mode inside 'write' block" if @state != :write
     @state = :course_points
-    write_definition_message(:course_point)
     yield
     @state = :write
   end
@@ -76,43 +73,37 @@ class RubyFit::Writer
   def track_points
     raise "Can only write track points inside 'write' block" if @state != :write
     @state = :track_points
-    write_definition_message(:record)
     yield
     @state = :write
   end
 
   def course_point(values)
     raise "Can only write course points inside 'course_points' block" if @state != :course_points
-    write_data_message(:course_point, values)
+    write_message(:course_point, values)
   end
 
   def track_point(values)
     raise "Can only write track points inside 'track_points' block" if @state != :track_points
-    write_data_message(:record, values)
+    write_message(:record, values)
   end
 
   protected
   
-  def write_definition_message(type)
-    write_data(RubyFit::MessageWriter.definition_message(type, local_num(type)))
-  end
+  def write_message(type, values)
+    local_num = @local_nums[type]
+    unless local_num
+      @last_local_num += 1
+      local_num = @last_local_num
+      write_data(RubyFit::MessageWriter.definition_message(type, local_num))
+      @local_nums[type] = local_num
+    end
 
-  def write_data_message(type, values)
-    write_data(RubyFit::MessageWriter.data_message(type, local_num(type), values))
+    write_data(RubyFit::MessageWriter.data_message(type, local_num, values))
   end
 
   def write_data(data)
     @stream.write(data)
     prev = @data_crc
     @data_crc = RubyFit::CRC.update_crc(@data_crc, data)
-  end
-
-  def local_num(type)
-    result = @local_nums.index(type)
-    unless result
-      result = @local_nums.size
-      @local_nums << type
-    end
-    result
   end
 end

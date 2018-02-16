@@ -79,8 +79,10 @@ describe RubyFit::Writer do
       num2bytes((meters + 500).truncate, 2)
     end
 
-    bytes = stream.string.unpack("C*")
+    # Checksum to be compared at the end of the stream
+    expected_data_checksum = RubyFit::CRC.update_crc(0, stream.string[0...-2])
 
+    bytes = stream.string.unpack("C*")
     data_size = bytes2num(bytes.slice(4, 4), 4, true, false)
     expect(data_size).to eq(bytes.count - 16)
 
@@ -203,7 +205,7 @@ describe RubyFit::Writer do
         *distance_bytes(distance), # distance
         *str2bytes(data[:name], 16), # name
         255, 255, # message index, invalid
-        RubyFit::MessageWriter::COURSE_POINT_TYPE[data[:type]], # type
+        RubyFit::MessageConstants::COURSE_POINT_TYPE[data[:type]], # type
       ]
       expect(bytes.shift(expected_bytes.size)).to eq(expected_bytes)
     end
@@ -241,7 +243,7 @@ describe RubyFit::Writer do
       expect(bytes.shift(expected_bytes.size)).to eq(expected_bytes)
     end
     
-    expected_bytes = num2bytes(0x14BB, 2, false) # CRC (little endian)
+    expected_bytes = num2bytes(expected_data_checksum, 2, false) # CRC (little endian)
     expect(bytes.shift(expected_bytes.size)).to eq(expected_bytes)
 
     expect(bytes.count).to eq(0)
